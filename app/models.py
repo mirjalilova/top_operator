@@ -1,5 +1,4 @@
 import uuid
-
 from sqlalchemy import (
     Column,
     String,
@@ -8,12 +7,12 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     DateTime,
-    func,
     Integer,
-    Boolean,       
+    Boolean,
+    func,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -21,15 +20,31 @@ from app.database import Base
 class Operator(Base):
     __tablename__ = "operators"
 
-    id = Column(Integer, primary_key=True)
-    agent_id = Column(Integer, nullable=False)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
 
-    operator_id = Column(String, nullable=False, unique=True)
+    operator_id = Column(
+        String,
+        nullable=False,
+        unique=True
+    )
+
     full_name = Column(String, nullable=False)
     group_name = Column(String, nullable=False)
     avatar_url = Column(String)
 
-    created_at = Column(DateTime, server_default=func.now())
+    agent_id = Column(
+        Integer,
+        unique=True
+    )
+
+    created_at = Column(
+        DateTime,
+        server_default=func.now()
+    )
 
     metrics = relationship(
         "OperatorMetric",
@@ -43,11 +58,14 @@ class Operator(Base):
         cascade="all, delete-orphan"
     )
 
-
 class OperatorMetric(Base):
     __tablename__ = "operator_metrics"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
 
     operator_uuid = Column(
         UUID(as_uuid=True),
@@ -67,6 +85,11 @@ class OperatorMetric(Base):
 
     kpi = Column(Float)
 
+    created_at = Column(
+        DateTime,
+        server_default=func.now()
+    )
+
     operator = relationship(
         "Operator",
         back_populates="metrics"
@@ -76,15 +99,18 @@ class OperatorMetric(Base):
         UniqueConstraint(
             "operator_uuid",
             "date",
-            name="uq_operator_date"
+            name="uq_operator_metrics_operator_date"
         ),
     )
-
 
 class OperatorMonthlyMetric(Base):
     __tablename__ = "operator_monthly_metrics"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
 
     operator_uuid = Column(
         UUID(as_uuid=True),
@@ -95,10 +121,9 @@ class OperatorMonthlyMetric(Base):
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
 
-    call_count = Column(Integer, nullable=False)
-    avg_busy_per_call = Column(Float, nullable=False)
-
-    kpi = Column(Float, nullable=False)
+    call_count = Column(Integer)
+    avg_busy_per_call = Column(Float)
+    kpi = Column(Float)
 
     score = Column(Integer)
     rank = Column(Integer)
@@ -106,12 +131,15 @@ class OperatorMonthlyMetric(Base):
     is_top_1 = Column(
         Boolean,
         nullable=False,
-        server_default="false"   # ✅ Postgres uchun to‘g‘ri
+        server_default="false"
     )
 
     stars = Column(Integer)
 
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(
+        DateTime,
+        server_default=func.now()
+    )
 
     operator = relationship(
         "Operator",
@@ -130,7 +158,11 @@ class OperatorMonthlyMetric(Base):
 class BonusDistribution(Base):
     __tablename__ = "bonus_distributions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
 
     operator_uuid = Column(
         UUID(as_uuid=True),
@@ -141,17 +173,11 @@ class BonusDistribution(Base):
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
 
-    KIE = Column(Float, nullable=False)
+    kie = Column(Integer)
+    active_participation = Column(Integer)
+    monitoring = Column(Integer)
 
-    created_at = Column(DateTime, server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint(
-            "operator_uuid",
-            "year",
-            "month",
-            name="uq_bonus_operator_month"
-        ),
+    created_at = Column(
+        DateTime,
+        server_default=func.now()
     )
-
-    

@@ -1,6 +1,7 @@
 CREATE TABLE operators (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid()
-    login INT NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operator_id VARCHAR NOT NULL,
+    agent_id INT,
     full_name VARCHAR NOT NULL,
     group_name VARCHAR NOT NULL,
     avatar_url VARCHAR,
