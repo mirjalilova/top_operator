@@ -9,12 +9,11 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Operator, OperatorMetric
 
-# ================= CONFIG =================
 API_URL = "http://csv.ccenter.uz:5000/csv-to-json/day_by"
 COLUMNS = "1,2,3,4,5,8,9,10,11,14"
 
 KPI_SHEET_URL = "https://docs.google.com/spreadsheets/d/1yKRsDh0S1lmcfFthlxhUtScGA-FK2XSe_8snO5-i50A"
-GOOGLE_CREDS = "genial-smoke-461106-e4-1ff74dbbfcd0.json"
+GOOGLE_CREDS = "genial-smoke-461106-e4-90a8532e00b8.json"
 OPERATORS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1lOyz1d6iL6Ok0uzElqrn_KM8Im-MgrEslRHu2Hi8ZKE/edit?gid=0#gid=0"
 ALLOWED_GROUPS = {"1009", "1000", "1242", "1170", "1093", "ДОП"}
 
@@ -22,9 +21,6 @@ MAX_RETRY_HOUR = 23
 RETRY_INTERVAL = 3600  # 1 soat
 
 LOG_FILE = "/home/feruza/git/mirjalilova/top_operator/logs/etl_daily.log"
-# =========================================
-
-# ---------- LOGGING ----------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -43,23 +39,20 @@ def load_operator_sheet() -> dict:
     ws = sh.worksheet("Operators")
 
     values = ws.get_all_values()
-    rows = values[1:]  # header skip
+    rows = values[1:]
 
     sheet_map = {}
 
     for r in rows:
-        # minimal ustunlar
         if len(r) < 3:
             continue
 
-        login = r[1].strip()   # ID = login (STRING)
+        login = r[1].strip() 
         group_name = r[2].strip()
 
-        # ❌ faqat ruxsat berilgan guruhlar
         if group_name not in ALLOWED_GROUPS:
             continue
 
-        # login tekshiruvi
         if not login.isdigit():
             continue
 
@@ -78,7 +71,6 @@ def load_operator_sheet() -> dict:
     return sheet_map
 
 
-# ---------- KPI ----------
 def load_kpi_map() -> dict:
     logger.info("Loading KPI sheet...")
     gc = gspread.service_account(GOOGLE_CREDS)
@@ -110,18 +102,12 @@ def load_kpi_map() -> dict:
     return kpi_map
 
 
-# ---------- KPI CYCLE (20 → 20) ----------
 def resolve_cycle_for_date(d: date) -> int:
-    """
-    20 dan oldin bo‘lsa — oldingi oy
-    20 va keyin bo‘lsa — shu oy
-    """
     if d.day >= 20:
         return d.month
     return 12 if d.month == 1 else d.month - 1
 
 
-# ---------- API ----------
 def fetch_day_data(day: date):
     params = {
         "columns": COLUMNS,
@@ -148,7 +134,6 @@ def get_or_create_operator(
     sheet_map: dict
 ) -> Operator | None:
 
-    # 1️⃣ Avval agent_id bo‘yicha tekshiramiz
     operator = db.query(Operator).filter(
         Operator.agent_id == agent_id
     ).first()
@@ -156,17 +141,16 @@ def get_or_create_operator(
     if operator:
         return operator
 
-    # 2️⃣ Sheetdan login (STRING) orqali qidiramiz
     sheet_row = sheet_map.get(login)
     if not sheet_row:
-        logger.warning(
-            f"Operator not found in sheet | login={login}, agent_id={agent_id}"
-        )
+        # logger.warning(
+        #     f"Operator not found in sheet | login={login}, agent_id={agent_id}"
+        # )
         return None
 
     operator = Operator(
         agent_id=agent_id,
-        operator_id=login,   # 👈 aynan string
+        operator_id=login,
         full_name=sheet_row["full_name"],
         group_name=sheet_row["group_name"],
         avatar_url=sheet_row["avatar_url"],
@@ -181,7 +165,6 @@ def get_or_create_operator(
     return operator
 
 
-# ---------- ETL ----------
 def try_fetch_and_save(
     day: date,
     kpi_map: dict,
@@ -194,7 +177,6 @@ def try_fetch_and_save(
     try:
         api_rows = fetch_day_data(day)
 
-        # ❗ agar API hali bo‘sh bo‘lsa — retry
         if api_rows is None or len(api_rows) == 0:
             logger.warning(f"No API data yet for {day}")
             return False
@@ -219,7 +201,6 @@ def try_fetch_and_save(
 
             kpi = kpi_map.get((agent_id, cycle))
 
-            # overwrite (idempotent)
             db.query(OperatorMetric).filter(
                 OperatorMetric.operator_uuid == operator.id,
                 OperatorMetric.date == day
@@ -256,14 +237,22 @@ def try_fetch_and_save(
         db.close()
 
 
-# ---------- RUNNER ----------
 def run_daily_job():
-    target_day = date.today() - timedelta(days=2)
+    target_day = date.today() - timedelta(days=1)
 
     logger.info(f"Daily ETL started | target_day={target_day}")
 
-    kpi_map = load_kpi_map()
-    sheet_map = load_operator_sheet()
+    try:
+        kpi_map = load_kpi_map()
+    except Exception:
+        logger.exception("KPI sheet failed, continue without KPI")
+        kpi_map = {} 
+
+    try:
+        sheet_map = load_operator_sheet()
+    except Exception:
+        logger.exception("Operators sheet failed, ETL cannot continue")
+        return
     cycle = resolve_cycle_for_date(target_day)
 
     logger.info(f"Resolved KPI cycle={cycle} for date={target_day}")

@@ -126,3 +126,32 @@ class OperatorMonthlyMetric(Base):
             name="uq_operator_month"
         ),
     )
+
+class BonusDistribution(Base):
+    __tablename__ = "bonus_distributions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    operator_uuid = Column(
+        UUID(as_uuid=True),
+        ForeignKey("operators.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+
+    KIE = Column(Float, nullable=False)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "operator_uuid",
+            "year",
+            "month",
+            name="uq_bonus_operator_month"
+        ),
+    )
+
+    

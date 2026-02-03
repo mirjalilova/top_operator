@@ -10,3 +10,4 @@ gspread==6.0.2
 google-auth==2.27.0
 pandas==2.2.0
 fastapi
+uvicorn[standard]==0.27.1
