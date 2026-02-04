@@ -20,7 +20,7 @@ ALLOWED_GROUPS = {"1009", "1000", "1242", "1170", "1093", "ДОП"}
 MAX_RETRY_HOUR = 23
 RETRY_INTERVAL = 3600  # 1 soat
 
-LOG_FILE = "/home/feruza/git/mirjalilova/top_operator/logs/etl_daily.log"
+LOG_FILE = "/home/user/Projects/top_operator/logs/etl_daily.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -270,6 +270,52 @@ def run_daily_job():
 
         logger.info("Retry after 1 hour...")
         time.sleep(RETRY_INTERVAL)
+
+
+def run_range_job(start_date: date, end_date: date):
+    logger.info(
+        f"ETL range started | from={start_date} to={end_date}"
+    )
+
+    try:
+        kpi_map = load_kpi_map()
+    except Exception:
+        logger.exception("KPI sheet failed, continue without KPI")
+        kpi_map = {}
+
+    try:
+        sheet_map = load_operator_sheet()
+    except Exception:
+        logger.exception("Operators sheet failed, ETL cannot continue")
+        return
+
+    d = start_date
+    while d <= end_date:
+        cycle = resolve_cycle_for_date(d)
+        logger.info(f"Processing date={d} | cycle={cycle}")
+
+        success = False
+        retry_started_at = datetime.now()
+
+        while True:
+            if try_fetch_and_save(d, kpi_map, cycle, sheet_map):
+                logger.info(f"ETL success for {d}")
+                success = True
+                break
+
+            if datetime.now().hour > MAX_RETRY_HOUR:
+                logger.error(f"23:00 bo‘ldi, data kelmadi: {d}")
+                break
+
+            logger.info(f"Retry {d} after 1 hour...")
+            time.sleep(RETRY_INTERVAL)
+
+        if not success:
+            logger.warning(f"ETL skipped date={d}")
+
+        d += timedelta(days=1)
+
+    logger.info("ETL range finished")
 
 
 if __name__ == "__main__":

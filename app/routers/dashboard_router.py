@@ -23,6 +23,15 @@ def seconds_to_hhmm(seconds: float | None) -> str:
     h, m = divmod(minutes, 60)
     return f"{h:02d}:{m:02d}"
 
+def medal_by_rank(rank: int) -> str:
+    if rank == 1:
+        return "gold"
+    if rank == 2:
+        return "silver"
+    if rank == 3:
+        return "bronze"
+    return ""
+
 
 @router.get("/{group}/operators")
 def get_group_operators(
@@ -32,51 +41,39 @@ def get_group_operators(
     db: Session = Depends(get_db),
 ):
     operators_query = text("""
-        SELECT
-            m.operator_uuid,
-            o.full_name,
-            o.avatar_url,
+            SELECT
+    m.operator_uuid,
+    o.full_name,
+    o.avatar_url,
 
-            m.rank,
-            m.stars,
+    m.rank,
+    m.stars,
 
-            m.call_count,
-            m.kpi,
-            m.avg_busy_per_call,
+    m.call_count,
+    m.kpi,
+    m.avg_busy_per_call,
 
-            m.score,
+    COALESCE((
+        SELECT SUM(m2.score)
+        FROM operator_monthly_metrics m2
+        WHERE m2.operator_uuid = m.operator_uuid
+          AND m2.year = m.year
+          AND m2.month < m.month
+    ), 0) AS score,
 
-            COALESCE(b.kie, 0) AS kie,
+    m.score AS score_delta
 
-            COALESCE(
-                m.score -
-                LAG(m.score) OVER (
-                    PARTITION BY m.operator_uuid
-                    ORDER BY d.date
-                ),
-                0
-            ) AS score_delta
+FROM operator_monthly_metrics m
+JOIN operators o ON o.id = m.operator_uuid
 
-        FROM operator_monthly_metrics m
-        JOIN operators o ON o.id = m.operator_uuid
+WHERE m.year = :year
+  AND m.month = :month
+  AND o.group_name = :group
+  AND m.rank IS NOT NULL
 
-        LEFT JOIN bonus_distributions b
-            ON b.operator_uuid = m.operator_uuid
-            AND b.year = m.year
-            AND b.month = m.month
+ORDER BY m.rank
+LIMIT 10;
 
-        LEFT JOIN operator_daily_rank d
-          ON d.operator_uuid = m.operator_uuid
-         AND d.year = m.year
-         AND d.month = m.month
-
-        WHERE m.year = :year
-          AND m.month = :month
-          AND o.group_name = :group
-          AND m.rank IS NOT NULL
-
-        ORDER BY m.rank
-        LIMIT 10
     """)
 
 
@@ -155,7 +152,6 @@ def get_operator_profile(
     month: int = Query(...),
     db: Session = Depends(get_db),
 ):
-    # 1️⃣ OPERATOR + OYLIK MAʼLUMOT
     profile_q = text("""
         SELECT
             o.id AS operator_uuid,
@@ -198,7 +194,6 @@ def get_operator_profile(
     if not profile:
         return {"detail": "Operator not found"}
 
-    # 2️⃣ GRAPH — faqat ishlagan kunlar
     graph_q = text("""
         SELECT
             d.date,
@@ -223,7 +218,6 @@ def get_operator_profile(
         }
     ).mappings().all()
 
-    # 3️⃣ KECHAGI STATISTIKA (kunlikdan)
     yesterday_q = text("""
         SELECT
             call_count,
@@ -244,7 +238,6 @@ def get_operator_profile(
         {"operator_uuid": operator_uuid}
     ).mappings().first()
 
-    # 4️⃣ RESPONSE
     return {
         "operator": {
             "operator_uuid": profile["operator_uuid"],
@@ -277,4 +270,61 @@ def get_operator_profile(
             ),
             "kpi": yesterday["kpi"] if yesterday else None,
         }
+    }
+
+
+
+@router.get("/top-operators")
+def get_top_operators(
+    year: int = Query(...),
+    month: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    query = text("""
+        SELECT
+            o.group_name,
+            m.operator_uuid,
+            o.full_name,
+            o.avatar_url,
+            m.rank,
+            m.score
+        FROM operator_monthly_metrics m
+        JOIN operators o ON o.id = m.operator_uuid
+        WHERE m.year = :year
+          AND m.month = :month
+          AND m.rank <= 3
+        ORDER BY o.group_name, m.rank
+    """)
+
+    rows = db.execute(
+        query,
+        {"year": year, "month": month}
+    ).mappings().all()
+
+    groups_map: dict[str, dict] = {}
+
+    for r in rows:
+        group = r["group_name"]
+
+        if group not in groups_map:
+            groups_map[group] = {
+                "group": group,
+                "title": group,
+                "top_operators": [],
+                "see_all_url": f"/groups/{group}/operators?year={year}&month={month}",
+            }
+
+        groups_map[group]["top_operators"].append({
+            "operator_uuid": r["operator_uuid"],
+            "full_name": r["full_name"],
+            "avatar_url": r["avatar_url"],
+            "rank": r["rank"],
+            "medal": medal_by_rank(r["rank"]),
+            "score": r["score"],
+        })
+
+    return {
+        "year": year,
+        "month": month,
+        "groups": list(groups_map.values())
     }
